@@ -52,160 +52,260 @@ def run_experiment(config):
 
     with mlflow.start_run(run_name=config["name"]):
 
-        # ----------------------------------------------------
-        # PARÂMETROS DA RUN
-        # ----------------------------------------------------
+        # ====================================================
+        # TRACE PRINCIPAL DO PIPELINE
+        # ====================================================
 
-        mlflow.log_params(
-            {
-                "learning_rate": config["learning_rate"],
-                "weight_decay": config["weight_decay"],
-                "epochs": EPOCHS,
-                "batch_size": BATCH_SIZE,
-                "seed": SEED,
-                "input_size": 16,
-                "hidden_size_1": 64,
-                "hidden_size_2": 32,
-                "num_classes": 7,
-                "optimizer": "Adam",
-                "loss_function": "CrossEntropyLoss",
-                "split": "64% train / 16% validation / 20% test",
-            }
-        )
+        with mlflow.start_span(name="pipeline") as pipeline_span:
 
-        # ----------------------------------------------------
-        # PREPARAÇÃO DOS DADOS
-        # ----------------------------------------------------
-
-        with mlflow.start_span(name="prepare_data"):
-            train_loader, val_loader, _, _, _ = load_data(
-                batch_size=BATCH_SIZE,
-                seed=SEED,
+            pipeline_span.set_attributes(
+                {
+                    "run_name": config["name"],
+                    "learning_rate": config["learning_rate"],
+                    "weight_decay": config["weight_decay"],
+                    "epochs": EPOCHS,
+                    "batch_size": BATCH_SIZE,
+                    "seed": SEED,
+                    "device": str(DEVICE),
+                }
             )
 
-        # ----------------------------------------------------
-        # MODELO
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # PARÂMETROS DA RUN
+            # ------------------------------------------------
 
-        model = BeanMLP(
-            input_size=16,
-            hidden_size1=64,
-            hidden_size2=32,
-            num_classes=7,
-        ).to(DEVICE)
+            mlflow.log_params(
+                {
+                    "learning_rate": config["learning_rate"],
+                    "weight_decay": config["weight_decay"],
+                    "epochs": EPOCHS,
+                    "batch_size": BATCH_SIZE,
+                    "seed": SEED,
+                    "input_size": 16,
+                    "hidden_size_1": 64,
+                    "hidden_size_2": 32,
+                    "num_classes": 7,
+                    "optimizer": "Adam",
+                    "loss_function": "CrossEntropyLoss",
+                    "split": "64% train / 16% validation / 20% test",
+                }
+            )
 
-        criterion = nn.CrossEntropyLoss()
+            # ------------------------------------------------
+            # PREPARAÇÃO DOS DADOS
+            # ------------------------------------------------
 
-        optimizer = torch.optim.Adam(
-            model.parameters(),
-            lr=config["learning_rate"],
-            weight_decay=config["weight_decay"],
-        )
+            with mlflow.start_span(name="prepare_data") as prepare_span:
 
-        best_val_loss = float("inf")
-        best_state = None
-
-        # ----------------------------------------------------
-        # TREINAMENTO
-        # ----------------------------------------------------
-
-        with mlflow.start_span(name="train"):
-
-            for epoch in range(EPOCHS):
-
-                train_loss = train_one_epoch(
-                    model,
-                    train_loader,
-                    criterion,
-                    optimizer,
-                    DEVICE,
+                train_loader, val_loader, _, _, _ = load_data(
+                    batch_size=BATCH_SIZE,
+                    seed=SEED,
                 )
 
-                # --------------------------------------------
-                # VALIDAÇÃO
-                # --------------------------------------------
+                prepare_span.set_attributes(
+                    {
+                        "train_samples": len(train_loader.dataset),
+                        "validation_samples": len(val_loader.dataset),
+                        "batch_size": BATCH_SIZE,
+                    }
+                )
 
-                with mlflow.start_span(name="validate"):
+            # ------------------------------------------------
+            # MODELO
+            # ------------------------------------------------
 
-                    val_loss, val_accuracy, val_f1 = validate(
+            model = BeanMLP(
+                input_size=16,
+                hidden_size1=64,
+                hidden_size2=32,
+                num_classes=7,
+            ).to(DEVICE)
+
+            criterion = nn.CrossEntropyLoss()
+
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=config["learning_rate"],
+                weight_decay=config["weight_decay"],
+            )
+
+            best_val_loss = float("inf")
+            best_state = None
+            best_epoch = None
+
+            # ------------------------------------------------
+            # TREINAMENTO
+            # ------------------------------------------------
+
+            with mlflow.start_span(name="train") as train_span:
+
+                for epoch in range(EPOCHS):
+
+                    train_loss = train_one_epoch(
                         model,
-                        val_loader,
+                        train_loader,
                         criterion,
+                        optimizer,
                         DEVICE,
                     )
 
-                # Métricas por época
-                mlflow.log_metric(
-                    "train_loss",
-                    train_loss,
-                    step=epoch,
-                )
+                    # ----------------------------------------
+                    # VALIDAÇÃO DA ÉPOCA
+                    # ----------------------------------------
 
-                mlflow.log_metric(
-                    "val_loss",
-                    val_loss,
-                    step=epoch,
-                )
+                    with mlflow.start_span(
+                        name=f"validate_epoch_{epoch + 1:02d}"
+                    ) as validation_span:
 
-                mlflow.log_metric(
-                    "val_accuracy",
-                    val_accuracy,
-                    step=epoch,
-                )
+                        val_loss, val_accuracy, val_f1 = validate(
+                            model,
+                            val_loader,
+                            criterion,
+                            DEVICE,
+                        )
 
-                mlflow.log_metric(
-                    "val_f1",
-                    val_f1,
-                    step=epoch,
-                )
+                        validation_span.set_attributes(
+                            {
+                                "epoch": epoch + 1,
+                                "val_loss": float(val_loss),
+                                "val_accuracy": float(val_accuracy),
+                                "val_f1": float(val_f1),
+                            }
+                        )
 
-                # Guardar melhor modelo segundo validação
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
+                    # Métricas por época
+                    mlflow.log_metric(
+                        "train_loss",
+                        train_loss,
+                        step=epoch,
+                    )
 
-                    best_state = {
-                        key: value.detach().cpu().clone()
-                        for key, value in model.state_dict().items()
+                    mlflow.log_metric(
+                        "val_loss",
+                        val_loss,
+                        step=epoch,
+                    )
+
+                    mlflow.log_metric(
+                        "val_accuracy",
+                        val_accuracy,
+                        step=epoch,
+                    )
+
+                    mlflow.log_metric(
+                        "val_f1",
+                        val_f1,
+                        step=epoch,
+                    )
+
+                    # Melhor modelo segundo a perda de validação
+                    if val_loss < best_val_loss:
+
+                        best_val_loss = val_loss
+                        best_epoch = epoch + 1
+
+                        best_state = {
+                            key: value.detach().cpu().clone()
+                            for key, value in model.state_dict().items()
+                        }
+
+                    print(
+                        f'{config["name"]} | '
+                        f'Epoch {epoch + 1:02d}/{EPOCHS} | '
+                        f'Train Loss: {train_loss:.4f} | '
+                        f'Val Loss: {val_loss:.4f} | '
+                        f'Val Acc: {val_accuracy:.4f} | '
+                        f'Val F1: {val_f1:.4f}'
+                    )
+
+                train_span.set_attributes(
+                    {
+                        "best_epoch": best_epoch,
+                        "best_val_loss": float(best_val_loss),
                     }
-
-                print(
-                    f'{config["name"]} | '
-                    f'Epoch {epoch + 1:02d}/{EPOCHS} | '
-                    f'Train Loss: {train_loss:.4f} | '
-                    f'Val Loss: {val_loss:.4f} | '
-                    f'Val Acc: {val_accuracy:.4f} | '
-                    f'Val F1: {val_f1:.4f}'
                 )
 
-        # Restaurar melhor estado encontrado na validação
-        model.load_state_dict(best_state)
+            # ------------------------------------------------
+            # RESTAURAR MELHOR MODELO
+            # ------------------------------------------------
 
-        # ----------------------------------------------------
-        # VALIDAÇÃO FINAL DA RUN
-        # ----------------------------------------------------
+            model.load_state_dict(best_state)
 
-        with mlflow.start_span(name="final_validation"):
+            # ------------------------------------------------
+            # VALIDAÇÃO FINAL
+            # ------------------------------------------------
 
-            final_val_loss, final_val_accuracy, final_val_f1 = validate(
-                model,
-                val_loader,
-                criterion,
-                DEVICE,
+            with mlflow.start_span(
+                name="final_validation"
+            ) as final_validation_span:
+
+                final_val_loss, final_val_accuracy, final_val_f1 = validate(
+                    model,
+                    val_loader,
+                    criterion,
+                    DEVICE,
+                )
+
+                final_validation_span.set_attributes(
+                    {
+                        "best_epoch": best_epoch,
+                        "val_loss": float(final_val_loss),
+                        "val_accuracy": float(final_val_accuracy),
+                        "val_f1": float(final_val_f1),
+                    }
+                )
+
+            # ------------------------------------------------
+            # MÉTRICAS FINAIS
+            # ------------------------------------------------
+
+            mlflow.log_metric(
+                "best_val_loss",
+                final_val_loss,
             )
 
-        mlflow.log_metric("best_val_loss", final_val_loss)
-        mlflow.log_metric("best_val_accuracy", final_val_accuracy)
-        mlflow.log_metric("best_val_f1", final_val_f1)
+            mlflow.log_metric(
+                "best_val_accuracy",
+                final_val_accuracy,
+            )
 
-        # Registrar modelo como artefato da run
-        mlflow.pytorch.log_model(
-            model,
-            name="model",
-            serialization_format="pickle",
-        )
+            mlflow.log_metric(
+                "best_val_f1",
+                final_val_f1,
+            )
+
+            mlflow.log_metric(
+                "best_epoch",
+                best_epoch,
+            )
+
+            # ------------------------------------------------
+            # MODELO
+            # ------------------------------------------------
+
+            mlflow.pytorch.log_model(
+                model,
+                name="model",
+                serialization_format="pickle",
+            )
+
+            # Informações finais do trace
+            pipeline_span.set_attributes(
+                {
+                    "selected_epoch": best_epoch,
+                    "final_val_loss": float(final_val_loss),
+                    "final_val_accuracy": float(final_val_accuracy),
+                    "final_val_f1": float(final_val_f1),
+                }
+            )
+
+        # ====================================================
+        # RESULTADO DA RUN
+        # ====================================================
 
         print()
         print(f'Run "{config["name"]}" concluída.')
+        print(f"Melhor época: {best_epoch}")
         print(f"Melhor Val Loss: {final_val_loss:.4f}")
         print(f"Val Accuracy: {final_val_accuracy:.4f}")
         print(f"Val F1: {final_val_f1:.4f}")
