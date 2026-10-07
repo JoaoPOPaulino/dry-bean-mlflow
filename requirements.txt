@@ -1,0 +1,6 @@
+torch
+mlflow
+pandas
+scikit-learn
+openpyxl
+matplotlib
