@@ -1,0 +1,23 @@
+artifact_path: "/home/joao-pedro/\xC1rea de trabalho/dry-bean-mlflow/mlruns/1/models/m-ceaa340dcba84ec780cda32e891fb58e/artifacts"
+flavors:
+  python_function:
+    config:
+      device: null
+    data: data
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pytorch
+    pickle_module_name: mlflow.pytorch.pickle_module
+    python_version: 3.14.4
+  pytorch:
+    code: null
+    model_data: data
+    pytorch_version: 2.14.1+cu130
+mlflow_version: 3.17.0
+model_id: m-ceaa340dcba84ec780cda32e891fb58e
+model_size_bytes: 17817
+model_uuid: m-ceaa340dcba84ec780cda32e891fb58e
+prompts: null
+run_id: 7a6b474424f24a7b87007c17d829ef23
+utc_time_created: '2026-10-07 19:42:46.986017'
