@@ -1,20 +1,25 @@
-import torch
-import torch.nn as nn
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import mlflow
+import torch
 from sklearn.metrics import (
+    ConfusionMatrixDisplay,
     accuracy_score,
-    f1_score,
     classification_report,
     confusion_matrix,
+    f1_score,
 )
 
 from src.data import load_data
-from src.model import BeanMLP
 
 
 SEED = 42
 BATCH_SIZE = 64
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+ARTIFACTS_DIR = Path("artifacts")
+ARTIFACTS_DIR.mkdir(exist_ok=True)
 
 
 def evaluate(model, loader):
@@ -41,15 +46,27 @@ def main():
     print("AVALIAÇÃO FINAL - RUN B")
     print("=" * 60)
 
+    # --------------------------------------------------------
+    # Carregar conjunto de teste reservado
+    # --------------------------------------------------------
+
     _, _, test_loader, label_encoder, _ = load_data(
         batch_size=BATCH_SIZE,
         seed=SEED,
     )
 
+    # --------------------------------------------------------
     # Localizar a Run B no MLflow
+    # --------------------------------------------------------
+
     experiment = mlflow.get_experiment_by_name(
         "dry-bean-classification"
     )
+
+    if experiment is None:
+        raise RuntimeError(
+            "Experimento 'dry-bean-classification' não encontrado."
+        )
 
     runs = mlflow.search_runs(
         experiment_ids=[experiment.experiment_id],
@@ -67,7 +84,10 @@ def main():
 
     print(f"Run selecionada: {run_id}")
 
-    # Carregar exatamente o modelo salvo pela Run B
+    # --------------------------------------------------------
+    # Carregar modelo escolhido
+    # --------------------------------------------------------
+
     model_uri = f"runs:/{run_id}/model"
 
     model = mlflow.pytorch.load_model(
@@ -77,7 +97,10 @@ def main():
 
     model = model.to(DEVICE)
 
-    # Avaliação única no conjunto de teste
+    # --------------------------------------------------------
+    # Avaliação no teste reservado
+    # --------------------------------------------------------
+
     y_true, y_pred = evaluate(
         model,
         test_loader,
@@ -94,30 +117,96 @@ def main():
         average="macro",
     )
 
+    matrix = confusion_matrix(
+        y_true,
+        y_pred,
+    )
+
+    report = classification_report(
+        y_true,
+        y_pred,
+        target_names=label_encoder.classes_,
+        digits=4,
+    )
+
+    # --------------------------------------------------------
+    # Mostrar resultados
+    # --------------------------------------------------------
+
     print()
     print(f"Test Accuracy: {accuracy:.4f}")
     print(f"Test F1 Macro: {f1:.4f}")
 
     print()
     print("MATRIZ DE CONFUSÃO")
-    print(
-        confusion_matrix(
-            y_true,
-            y_pred,
-        )
-    )
+    print(matrix)
 
     print()
     print("RELATÓRIO DE CLASSIFICAÇÃO")
+    print(report)
 
-    print(
-        classification_report(
-            y_true,
-            y_pred,
-            target_names=label_encoder.classes_,
-            digits=4,
-        )
+    # --------------------------------------------------------
+    # Salvar resultados
+    # --------------------------------------------------------
+
+    results_path = ARTIFACTS_DIR / "test_results.txt"
+
+    with open(results_path, "w", encoding="utf-8") as file:
+        file.write("AVALIAÇÃO FINAL - DRY BEAN CLASSIFICATION\n")
+        file.write("=" * 50 + "\n\n")
+        file.write(f"Run selecionada: {run_id}\n")
+        file.write("Experimento selecionado: B_taxa_menor\n")
+        file.write(f"Test Accuracy: {accuracy:.4f}\n")
+        file.write(f"Test F1 Macro: {f1:.4f}\n")
+
+    report_path = ARTIFACTS_DIR / "classification_report.txt"
+
+    with open(report_path, "w", encoding="utf-8") as file:
+        file.write(report)
+
+    # --------------------------------------------------------
+    # Matriz de confusão
+    # --------------------------------------------------------
+
+    display = ConfusionMatrixDisplay(
+        confusion_matrix=matrix,
+        display_labels=label_encoder.classes_,
     )
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    display.plot(
+        ax=ax,
+        xticks_rotation=45,
+        cmap="Blues",
+        colorbar=False,
+    )
+
+    ax.set_title(
+        "Matriz de Confusão - Run B - Conjunto de Teste"
+    )
+
+    fig.tight_layout()
+
+    confusion_matrix_path = (
+        ARTIFACTS_DIR / "confusion_matrix.png"
+    )
+
+    fig.savefig(
+        confusion_matrix_path,
+        dpi=150,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    print()
+    print("=" * 60)
+    print("ARTEFATOS GERADOS")
+    print("=" * 60)
+    print(results_path)
+    print(report_path)
+    print(confusion_matrix_path)
 
 
 if __name__ == "__main__":

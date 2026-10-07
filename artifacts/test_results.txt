@@ -1,0 +1,7 @@
+AVALIAÇÃO FINAL - DRY BEAN CLASSIFICATION
+==================================================
+
+Run selecionada: b7fdc3fb5b2a4c2f8721a1a5834ae9f3
+Experimento selecionado: B_taxa_menor
+Test Accuracy: 0.9236
+Test F1 Macro: 0.9343
