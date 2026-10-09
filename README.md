@@ -324,3 +324,11 @@ Na avaliação final, o modelo atingiu:
 **92,36% de acurácia e 93,43% de F1 Macro.**
 
 O uso do MLflow permitiu manter histórico das execuções, comparar configurações e observar as diferentes etapas do pipeline, tornando a decisão sobre o modelo final rastreável e fundamentada em evidências.
+
+## Apresentação do projeto
+
+O vídeo apresenta o pipeline de treinamento, a comparação
+dos experimentos no MLflow, a escolha do modelo e a
+avaliação final.
+
+**Vídeo:** [Assistir à apresentação](https://youtu.be/puEses0kw70)
